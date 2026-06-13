@@ -1,0 +1,11 @@
+{
+  "gameSettings": {
+    "autoSaveOnExit": true
+  },
+  "customSettings": {
+    "fontPath": "./data/font/default.ttf",
+    "avatarPath": "./data/picture/avatar.png",
+    "soundEnabled": true,
+    "vibrationEnabled": true
+  }
+}

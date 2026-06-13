@@ -1,0 +1,14 @@
+[data-theme="dark"] {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2d2d2d;
+  --bg-sidebar: rgba(30, 30, 30, 0.95);
+  --text-primary: #e0e0e0;
+  --text-secondary: #a0a0a0;
+  --border-color: #404040;
+  --card-bg: #2d2d2d;
+  --card-hover: #3a3a3a;
+  --correct-color: #66bb6a;
+  --error-color: #ef5350;
+  --primary-color: #42a5f5;
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}

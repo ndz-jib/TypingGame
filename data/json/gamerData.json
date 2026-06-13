@@ -1,0 +1,23 @@
+{
+  "name": "User",
+  "avatarUrl": "./data/picture/avatar.png",
+  "score": 0,
+  "playStats": {
+    "totalPlayTime": 0,
+    "totalGames": 0,
+    "totalCorrectChars": 0,
+    "totalWrongChars": 0,
+    "modeStats": {
+      "wordMode": {
+        "games": 0,
+        "bestWPM": 0,
+        "avgAccuracy": 0
+      },
+      "articleMode": {
+        "games": 0,
+        "bestWPM": 0,
+        "avgAccuracy": 0
+      }
+    }
+  }
+}
