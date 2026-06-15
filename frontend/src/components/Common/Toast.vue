@@ -10,17 +10,22 @@
 
 <script setup>
 import { ref } from 'vue'
+
 const visible = ref(false)
 const message = ref('')
 const type = ref('info')
 let timer = null
+
 const show = (msg, duration = 2000, toastType = 'info') => {
   if (timer) clearTimeout(timer)
   message.value = msg
   type.value = toastType
   visible.value = true
-  timer = setTimeout(() => { visible.value = false }, duration)
+  timer = setTimeout(() => {
+    visible.value = false
+  }, duration)
 }
+
 defineExpose({ show })
 </script>
 
@@ -37,10 +42,30 @@ defineExpose({ show })
   z-index: 3000;
   white-space: nowrap;
 }
-.toast.info { background: #333; }
-.toast.success { background: #4caf50; }
-.toast.error { background: #f44336; }
-.toast-enter-active, .toast-leave-active { transition: all 0.3s; }
-.toast-enter-from { opacity: 0; transform: translateX(-50%) translateY(20px); }
-.toast-leave-to { opacity: 0; transform: translateX(-50%) translateY(20px); }
+
+.toast.info {
+  background: #333;
+}
+
+.toast.success {
+  background: #4caf50;
+}
+
+.toast.error {
+  background: #f44336;
+}
+
+.toast-enter-active, .toast-leave-active {
+  transition: all 0.3s;
+}
+
+.toast-enter-from {
+  opacity: 0;
+  transform: translateX(-50%) translateY(20px);
+}
+
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(20px);
+}
 </style>
