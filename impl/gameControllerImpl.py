@@ -4,8 +4,25 @@
 # 用途：提供所有 API 的默认返回值，使应用能够启动并正常运行。
 # 后续开发只需将此文件中的模拟数据替换为真实业务逻辑即可。
 
+import os
+import shutil
+import random
 from datetime import datetime
+from flask import jsonify
 from controller.gameController import GameController
+from tool.fileManageTool import FileManageTool
+from tool.textSplitter import TextSplitter
+from tool.lineSplitter import LineSplitter
+from tool.articleSplitter import ArticleSplitter
+from tool.scoreCalculator import ScoreCalculator
+from tool.dataPackager import DataPackager
+from tool.loggerTool import logger
+from config import (
+    GAMER_DATA_PATH, VOCABULARY_PATH, MISTAKE_PATH, CONFIG_PATH,
+    TXT_DIR, PICTURE_DIR, FONT_DIR, VOICE_DIR,
+    DEFAULT_GAMER_DATA, DEFAULT_VOCABULARY, DEFAULT_CONFIG,
+    BACKUP_DIR, MAX_ARTICLE_CHARS
+)
 
 
 class GameControllerImpl(GameController):
@@ -16,128 +33,304 @@ class GameControllerImpl(GameController):
     """
 
     def __init__(self):
-        # 可在此处初始化真正的工具类，如 FileManageTool 等
-        # 目前为模拟状态，无需任何初始化
-        super().__init__()
+        self.file_tool = FileManageTool()
+        self.splitter = TextSplitter()
+        self.line_splitter = LineSplitter()
+        self.article_splitter = ArticleSplitter()
+        self.calculator = ScoreCalculator()
+        self.packager = DataPackager()
 
     # ==================== 健康检查 ====================
     def health_check(self):
-        # 模拟：总是返回健康状态
-        return {
-            "code": 200,
-            "message": "ok",
-            "data": {
-                "status": "healthy",
-                "dataIntegrity": True,
-                "lastCheck": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        from config import ensure_directories
+        
+        try:
+            ensure_directories()
+            
+            files_ok = True
+            if not os.path.exists(GAMER_DATA_PATH):
+                self.file_tool.write_json(GAMER_DATA_PATH, DEFAULT_GAMER_DATA)
+                files_ok = False
+            
+            if not os.path.exists(VOCABULARY_PATH):
+                self.file_tool.write_json(VOCABULARY_PATH, DEFAULT_VOCABULARY)
+                files_ok = False
+            
+            if not os.path.exists(MISTAKE_PATH):
+                self.file_tool.write_json(MISTAKE_PATH, {})
+                files_ok = False
+            
+            if not os.path.exists(CONFIG_PATH):
+                self.file_tool.write_json(CONFIG_PATH, DEFAULT_CONFIG)
+                files_ok = False
+            
+            for dir_path in [TXT_DIR, VOICE_DIR, FONT_DIR, PICTURE_DIR]:
+                os.makedirs(dir_path, exist_ok=True)
+            
+            logger.info("健康检查完成")
+            
+            return {
+                "code": 200,
+                "message": "ok",
+                "data": {
+                    "status": "healthy",
+                    "dataIntegrity": files_ok,
+                    "lastCheck": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }
             }
-        }
+        except Exception as e:
+            logger.error(f"健康检查失败: {str(e)}")
+            return {
+                "code": 500,
+                "message": "健康检查失败",
+                "data": {
+                    "status": "unhealthy",
+                    "error": str(e)
+                }
+            }
 
     # ==================== 玩家信息 ====================
     def get_gamer(self):
-        # 模拟返回一个预定义的玩家档案
-        return {
-            "code": 200,
-            "message": "success",
-            "data": {
-                "nickname": "Player",
-                "level": 1,
-                "playStats": {
-                    "totalGames": 0,
-                    "totalPlayTime": 0,
-                    "modeStats": {
-                        "wordMode": {"games": 0, "bestWPM": 0, "avgAccuracy": 1.0},
-                        "articleMode": {"games": 0, "bestWPM": 0, "avgAccuracy": 1.0}
-                    }
-                }
-            }
-        }
-
+        data = self.file_tool.read_json(GAMER_DATA_PATH, DEFAULT_GAMER_DATA)
+        return {"code": 200, "message": "success", "data": data}
+    
     def update_gamer(self, update_data):
-        # 模拟：直接返回传入的更新数据，表示更新成功
-        return {"code": 200, "message": "更新成功", "data": update_data}
+        current = self.file_tool.read_json(GAMER_DATA_PATH, DEFAULT_GAMER_DATA)
+        
+        def deep_update(base, updates):
+            for key, value in updates.items():
+                if isinstance(value, dict) and key in base and isinstance(base[key], dict):
+                    deep_update(base[key], value)
+                else:
+                    base[key] = value
+        
+        deep_update(current, update_data)
+        
+        if self.file_tool.write_json(GAMER_DATA_PATH, current):
+            return {"code": 200, "message": "更新成功", "data": current}
+        return {"code": 500, "message": "更新失败", "data": None}
 
     # ==================== 单词表 ====================
     def get_vocabulary(self, page=1, page_size=20, letter=None):
-        # 模拟：返回一个固定的单词列表，忽略分页参数
-        mock_words = [
-            {"word": "apple", "note": "苹果", "firstLetter": "A"},
-            {"word": "banana", "note": "香蕉", "firstLetter": "B"},
-            {"word": "cherry", "note": "樱桃", "firstLetter": "C"}
-        ]
-        # 简单模拟分页（始终返回所有）
+        data = self.file_tool.read_json(VOCABULARY_PATH, DEFAULT_VOCABULARY)
+        
+        all_words = []
+        for l, words in data.items():
+            if letter is None or l == letter:
+                for word, note in words:
+                    all_words.append({
+                        "word": word,
+                        "note": note,
+                        "firstLetter": l
+                    })
+        
+        total = len(all_words)
+        start = (page - 1) * page_size
+        end = start + page_size
+        page_list = all_words[start:end]
+        
         return {
             "code": 200,
             "message": "success",
             "data": {
-                "total": len(mock_words),
+                "total": total,
                 "page": page,
                 "pageSize": page_size,
-                "list": mock_words
+                "list": page_list
             }
         }
 
     def search_vocabulary(self, keyword, case_sensitive=False):
-        # 模拟：返回空结果
-        return {
-            "code": 200,
-            "message": "success",
-            "data": {"total": 0, "page": 1, "pageSize": 0, "list": []}
-        }
-
-    def add_vocabulary(self, word, note):
-        # 模拟：添加成功
-        return {"code": 200, "message": "添加成功", "data": {"word": word, "note": note}}
-
-    def delete_vocabulary(self, word):
-        # 模拟：删除成功
-        return {"code": 200, "message": "删除成功", "data": None}
-
-    def clear_vocabulary(self):
-        # 模拟：清空成功
-        return {"code": 200, "message": "单词表已清空", "data": None}
-
-    def update_word_note(self, word, note):
-        # 模拟：更新注释成功
-        return {"code": 200, "message": "更新成功", "data": {"word": word, "note": note}}
-
-    # ==================== 错词表 ====================
-    def record_mistake(self, word):
-        # 模拟：记录成功
-        return {"code": 200, "message": "错词记录成功", "data": None}
-
-    def get_mistake_list(self, sort_by="time", page=1, page_size=20):
-        # 模拟返回一个固定的错词列表
-        mock_mistakes = [
-            {"word": "apple", "errorCount": 3, "lastErrorTime": "2025-01-01 12:00:00", "firstLetter": "A"},
-            {"word": "banana", "errorCount": 1, "lastErrorTime": "2025-01-02 12:00:00", "firstLetter": "B"}
-        ]
+        data = self.file_tool.read_json(VOCABULARY_PATH, DEFAULT_VOCABULARY)
+        
+        results = []
+        search_key = keyword if case_sensitive else keyword.lower()
+        
+        for letter, words in data.items():
+            for word, note in words:
+                compare_word = word if case_sensitive else word.lower()
+                if search_key in compare_word:
+                    results.append({
+                        "word": word,
+                        "note": note,
+                        "firstLetter": letter
+                    })
+        
         return {
             "code": 200,
             "message": "success",
             "data": {
-                "total": len(mock_mistakes),
+                "total": len(results),
+                "page": 1,
+                "pageSize": len(results),
+                "list": results
+            }
+        }
+
+    def add_vocabulary(self, word, note):
+        data = self.file_tool.read_json(VOCABULARY_PATH, DEFAULT_VOCABULARY)
+        
+        first_letter = word[0].upper()
+        if first_letter not in data:
+            data[first_letter] = []
+        
+        found = False
+        for i, (w, n) in enumerate(data[first_letter]):
+            if w == word:
+                if note and note.strip():
+                    data[first_letter][i][1] = note
+                found = True
+                break
+        
+        if not found:
+            data[first_letter].append([word, note or ""])
+            data[first_letter].sort(key=lambda x: x[0].lower())
+        
+        if self.file_tool.write_json(VOCABULARY_PATH, data):
+            return {"code": 200, "message": "添加成功", "data": {"word": word, "note": note}}
+        return {"code": 500, "message": "添加失败", "data": None}
+
+    def delete_vocabulary(self, word):
+        data = self.file_tool.read_json(VOCABULARY_PATH, DEFAULT_VOCABULARY)
+        first_letter = word[0].upper()
+        
+        if first_letter in data:
+            data[first_letter] = [item for item in data[first_letter] if item[0] != word]
+            if not data[first_letter]:
+                del data[first_letter]
+            
+            if self.file_tool.write_json(VOCABULARY_PATH, data):
+                self._remove_from_mistake(word)
+                return {"code": 200, "message": "删除成功", "data": None}
+        
+        return {"code": 404, "message": "单词不存在", "data": None}
+
+    def clear_vocabulary(self):
+        if self.file_tool.write_json(VOCABULARY_PATH, {}):
+            return {"code": 200, "message": "单词表已清空", "data": None}
+        return {"code": 500, "message": "清空失败", "data": None}
+
+    def update_word_note(self, word, note):
+        data = self.file_tool.read_json(VOCABULARY_PATH, DEFAULT_VOCABULARY)
+        first_letter = word[0].upper()
+        
+        if first_letter in data:
+            for i, (w, n) in enumerate(data[first_letter]):
+                if w == word:
+                    data[first_letter][i][1] = note
+                    if self.file_tool.write_json(VOCABULARY_PATH, data):
+                        return {"code": 200, "message": "更新成功", "data": {"word": word, "note": note}}
+                    break
+        
+        return {"code": 404, "message": "单词不存在", "data": None}
+
+    # ==================== 错词表 ====================
+    def record_mistake(self, word):
+        """
+        记录错词（对外 API）
+        如果单词不在单词表中，自动添加（注释为空）
+        """
+        # 检查单词是否在单词表中
+        vocab_data = self.file_tool.read_json(VOCABULARY_PATH, DEFAULT_VOCABULARY)
+        first_letter = word[0].upper()
+        word_exists = False
+        
+        if first_letter in vocab_data:
+            for w, n in vocab_data[first_letter]:
+                if w == word:
+                    word_exists = True
+                    break
+        
+        # 如果不存在，添加到单词表
+        if not word_exists:
+            logger.info(f"错词 {word} 不在单词表中，自动添加")
+            self.add_vocabulary(word, "")
+        
+        # 记录错词
+        self._add_to_mistake(word)
+        
+        return {"code": 200, "message": "错词记录成功", "data": None}
+
+    def get_mistake_list(self, sort_by="time", page=1, page_size=20):
+        data = self.file_tool.read_json(MISTAKE_PATH, {})
+        
+        all_words = []
+        for letter, words in data.items():
+            for word, count, error_time in words:
+                all_words.append({
+                    "word": word,
+                    "errorCount": count,
+                    "lastErrorTime": error_time,
+                    "firstLetter": letter
+                })
+        
+        if sort_by == "count":
+            all_words.sort(key=lambda x: x["errorCount"], reverse=True)
+        else:
+            all_words.sort(key=lambda x: x["lastErrorTime"], reverse=True)
+        
+        total = len(all_words)
+        start = (page - 1) * page_size
+        end = start + page_size
+        page_list = all_words[start:end]
+        
+        return {
+            "code": 200,
+            "message": "success",
+            "data": {
+                "total": total,
                 "page": page,
                 "pageSize": page_size,
-                "list": mock_mistakes
+                "list": page_list
             }
         }
 
     def search_mistake(self, keyword, case_sensitive=False):
-        # 模拟：返回空结果
+        data = self.file_tool.read_json(MISTAKE_PATH, {})
+        
+        results = []
+        search_key = keyword if case_sensitive else keyword.lower()
+        
+        for letter, words in data.items():
+            for word, count, error_time in words:
+                compare_word = word if case_sensitive else word.lower()
+                if search_key in compare_word:
+                    results.append({
+                        "word": word,
+                        "errorCount": count,
+                        "lastErrorTime": error_time,
+                        "firstLetter": letter
+                    })
+        
         return {
             "code": 200,
             "message": "success",
-            "data": {"total": 0, "page": 1, "pageSize": 0, "list": []}
+            "data": {
+                "total": len(results),
+                "page": 1,
+                "pageSize": len(results),
+                "list": results
+            }
         }
 
     def delete_mistake(self, word):
-        # 模拟：删除成功
-        return {"code": 200, "message": "删除成功", "data": None}
+        data = self.file_tool.read_json(MISTAKE_PATH, {})
+        first_letter = word[0].upper()
+        
+        if first_letter in data:
+            data[first_letter] = [item for item in data[first_letter] if item[0] != word]
+            if not data[first_letter]:
+                del data[first_letter]
+            
+            if self.file_tool.write_json(MISTAKE_PATH, data):
+                return {"code": 200, "message": "删除成功", "data": None}
+        
+        return {"code": 404, "message": "错词不存在", "data": None}
 
     def clear_mistake(self):
-        # 模拟：清空成功
-        return {"code": 200, "message": "错词表已清空", "data": None}
+        if self.file_tool.write_json(MISTAKE_PATH, {}):
+            return {"code": 200, "message": "错词表已清空", "data": None}
+        return {"code": 500, "message": "清空失败", "data": None}
 
     # ==================== 配置 ====================
     def get_config(self):
@@ -293,12 +486,41 @@ class GameControllerImpl(GameController):
             }
         }
 
-    # ==================== 内部辅助方法（已由抽象类定义，这里为空实现） ====================
+    # ==================== 内部辅助方法 ====================
     def _remove_from_mistake(self, word):
-        pass
+        """从错词表中删除单词"""
+        mistake_data = self.file_tool.read_json(MISTAKE_PATH, {})
+        first_letter = word[0].upper()
+        
+        if first_letter in mistake_data:
+            mistake_data[first_letter] = [item for item in mistake_data[first_letter] if item[0] != word]
+            if not mistake_data[first_letter]:
+                del mistake_data[first_letter]
+            self.file_tool.write_json(MISTAKE_PATH, mistake_data)
 
     def _add_to_mistake(self, word):
-        pass
+        """添加或更新错词记录（内部方法）"""
+        mistake_data = self.file_tool.read_json(MISTAKE_PATH, {})
+        first_letter = word[0].upper()
+        
+        if first_letter not in mistake_data:
+            mistake_data[first_letter] = []
+        
+        found = False
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        for i, (w, count, time) in enumerate(mistake_data[first_letter]):
+            if w == word:
+                mistake_data[first_letter][i][1] = count + 1
+                mistake_data[first_letter][i][2] = current_time
+                found = True
+                break
+        
+        if not found:
+            mistake_data[first_letter].append([word, 1, current_time])
+        
+        self.file_tool.write_json(MISTAKE_PATH, mistake_data)
+        logger.debug(f"错词记录已更新: {word}")
 
     def _add_words_to_vocabulary(self, words):
         return []
