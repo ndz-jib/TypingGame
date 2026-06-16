@@ -10,8 +10,10 @@
 </template>
 
 <script setup>
+import { eventBus } from '@/utils/eventBus'
+
 const openSettings = () => {
-  if (window.__APP__) window.__APP__.openSettings()
+  eventBus.emit('open-dialog', 'settings')
 }
 </script>
 
@@ -24,20 +26,25 @@ const openSettings = () => {
   transition: background 0.2s;
   border-bottom: 1px solid var(--border-color);
 }
+
 .settings-entry:hover {
   background: var(--card-hover);
 }
+
 .entry-icon {
   font-size: 24px;
   margin-right: 12px;
 }
+
 .entry-info {
   flex: 1;
 }
+
 .entry-title {
   font-size: 16px;
   font-weight: 500;
 }
+
 .entry-desc {
   font-size: 12px;
   color: var(--text-secondary);

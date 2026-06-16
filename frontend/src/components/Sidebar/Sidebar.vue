@@ -42,6 +42,7 @@ const closeSidebar = () => {
   isOpen.value = false
 }
 
+// 暴露方法给父组件
 defineExpose({ closeSidebar })
 </script>
 

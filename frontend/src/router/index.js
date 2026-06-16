@@ -1,5 +1,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 
+// 注意：由于是单页应用 + 弹窗模式，路由主要用于管理不同页面
+// 打字主界面始终显示，弹窗通过事件总线控制
 const routes = [
   {
     path: '/',
