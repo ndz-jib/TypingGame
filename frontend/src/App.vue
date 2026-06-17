@@ -5,12 +5,12 @@
     <main class="main-content">
       <TypingArea v-if="isPlaying" />
       <div v-else class="welcome">
-        <h1>🎯 打字游戏</h1>
+        <h1>打字游戏</h1>
         <p>请从左侧菜单选择模式开始</p>
         <div class="shortcuts">
-          <span>⌨️ 单词模式</span>
-          <span>📖 文章模式</span>
-          <span>⚙️ 自定义设置</span>
+          <span>单词模式</span>
+          <span>文章模式</span>
+          <span>自定义设置</span>
         </div>
       </div>
     </main>
