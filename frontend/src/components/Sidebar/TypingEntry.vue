@@ -1,41 +1,57 @@
 <template>
   <div class="typing-entry">
-    <h3 class="section-title">🎮 打字入口</h3>
+    <h3 class="section-title">打字入口</h3>
     
     <div class="mode-section">
       <div class="mode-header" @click="toggleWordMode">
-        <span class="mode-title">📝 单词模式</span>
+        <span class="mode-title">单词模式</span>
         <span class="toggle-icon">{{ wordModeExpanded ? '▼' : '▶' }}</span>
       </div>
       <div v-show="wordModeExpanded" class="mode-settings">
-        <button class="start-btn" @click="startWordMode">开始单词模式</button>
+        <button class="start-btn" @click="openWordSettings">开始单词模式</button>
       </div>
     </div>
     
     <div class="mode-section">
       <div class="mode-header" @click="toggleArticleMode">
-        <span class="mode-title">📖 文章模式</span>
+        <span class="mode-title">文章模式</span>
         <span class="toggle-icon">{{ articleModeExpanded ? '▼' : '▶' }}</span>
       </div>
       <div v-show="articleModeExpanded" class="mode-settings">
-        <button class="start-btn" @click="startArticleMode">开始文章模式</button>
+        <button class="start-btn" @click="openArticleSettings">开始文章模式</button>
       </div>
     </div>
+    
+    <WordModeSettings v-model="showWordSettings" @start="startWordMode" />
+    <ArticleModeSettings v-model="showArticleSettings" @start="startArticleMode" />
   </div>
 </template>
 
 <script setup>
 import { ref } from 'vue'
+import { useGameStore } from '@/stores/gameStore'
+import { eventBus } from '@/utils/eventBus'
+import WordModeSettings from '@/components/Dialogs/WordModeSettings.vue'
+import ArticleModeSettings from '@/components/Dialogs/ArticleModeSettings.vue'
+
+const gameStore = useGameStore()
 
 const wordModeExpanded = ref(true)
 const articleModeExpanded = ref(false)
+const showWordSettings = ref(false)
+const showArticleSettings = ref(false)
 
-const startWordMode = () => {
-  if (window.__APP__) window.__APP__.startGame()
+const openWordSettings = () => showWordSettings.value = true
+const openArticleSettings = () => showArticleSettings.value = true
+
+const startWordMode = (settings) => {
+  gameStore.startGame('word', settings)
+  eventBus.emit('start-game', { mode: 'word', settings })
 }
 
-const startArticleMode = () => {
-  if (window.__APP__) window.__APP__.startGame()
+const startArticleMode = (settings) => {
+  gameStore.startGame('article', settings)
+  eventBus.emit('start-game', { mode: 'article', settings })
 }
 
 const toggleWordMode = () => wordModeExpanded.value = !wordModeExpanded.value
