@@ -563,31 +563,78 @@ class GameControllerImpl(GameController):
 
     # ==================== 文件上传 ====================
     def upload_avatar(self, file_data, filename):
-        # 模拟头像上传成功
-        return {
-            "code": 200,
-            "message": "头像上传成功",
-            "data": {"avatarPath": "./data/picture/avatar.png"}
-        }
+        """上传头像"""
+        try:
+            # 验证文件类型
+            if not filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
+                return {"code": 400, "message": "仅支持图片格式", "data": None}
+            
+            # 保存文件
+            file_path = os.path.join(PICTURE_DIR, 'avatar.png')
+            with open(file_path, 'wb') as f:
+                f.write(file_data)
+            
+            # 更新配置中的头像路径（确保路径正确）
+            config = self.file_tool.read_json(CONFIG_PATH, DEFAULT_CONFIG)
+            config['customSettings']['avatarPath'] = './data/picture/avatar.png'
+            self.file_tool.write_json(CONFIG_PATH, config)
+            
+            logger.info(f"头像已更新: {file_path}")
+            return {"code": 200, "message": "头像上传成功", "data": {"avatarPath": "./data/picture/avatar.png"}}
+        
+        except Exception as e:
+            logger.error(f"头像上传失败: {str(e)}")
+            return {"code": 500, "message": f"上传失败: {str(e)}", "data": None}
 
     def upload_font(self, file_data, filename):
-        # 模拟字体上传成功
-        return {
-            "code": 200,
-            "message": "字体上传成功",
-            "data": {"fontPath": "./data/font/default.ttf"}
-        }
+        """上传字体"""
+        try:
+            # 验证文件类型
+            if not filename.lower().endswith('.ttf'):
+                return {"code": 400, "message": "仅支持 TTF 字体格式", "data": None}
+            
+            # 保存文件
+            file_path = os.path.join(FONT_DIR, 'default.ttf')
+            with open(file_path, 'wb') as f:
+                f.write(file_data)
+            
+            # 更新配置中的字体路径
+            config = self.file_tool.read_json(CONFIG_PATH, DEFAULT_CONFIG)
+            config['customSettings']['fontPath'] = './data/font/default.ttf'
+            self.file_tool.write_json(CONFIG_PATH, config)
+            
+            logger.info(f"字体已更新: {file_path}")
+            return {"code": 200, "message": "字体上传成功", "data": {"fontPath": "./data/font/default.ttf"}}
+        
+        except Exception as e:
+            logger.error(f"字体上传失败: {str(e)}")
+            return {"code": 500, "message": f"上传失败: {str(e)}", "data": None}
 
     def upload_voice(self, voice_type, file_data, filename):
-        # 模拟音效上传成功
-        valid_types = ['keypress', 'error', 'complete']
-        if voice_type not in valid_types:
-            return {"code": 400, "message": f"无效的音效类型", "data": None}
-        return {
-            "code": 200,
-            "message": f"{voice_type} 音效上传成功",
-            "data": {"voicePath": f"./data/voice/{voice_type}.mp3"}
-        }
+        """上传音效
+        voice_type: keypress, error, complete
+        """
+        try:
+            # 验证音效类型
+            valid_types = ['keypress', 'error', 'complete']
+            if voice_type not in valid_types:
+                return {"code": 400, "message": f"无效的音效类型，支持: {', '.join(valid_types)}", "data": None}
+            
+            # 验证文件类型
+            if not filename.lower().endswith('.mp3'):
+                return {"code": 400, "message": "仅支持 MP3 格式", "data": None}
+            
+            # 保存文件
+            file_path = os.path.join(VOICE_DIR, f'{voice_type}.mp3')
+            with open(file_path, 'wb') as f:
+                f.write(file_data)
+            
+            logger.info(f"音效已更新: {file_path}")
+            return {"code": 200, "message": f"{voice_type} 音效上传成功", "data": {"voicePath": f"./data/voice/{voice_type}.mp3"}}
+        
+        except Exception as e:
+            logger.error(f"音效上传失败: {str(e)}")
+            return {"code": 500, "message": f"上传失败: {str(e)}", "data": None}
 
     # ==================== 游戏结果记录 ====================
     def record_word_mode_result(self, wpm, accuracy, play_time):
