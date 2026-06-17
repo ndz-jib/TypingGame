@@ -1,260 +1,168 @@
 <template>
-  <div 
-    class="word-card" 
-    :class="{ 
-      active: isActive,
-      completed: isCompleted,
-      'has-error': hasError && !isCompleted
-    }"
-  >
-    <div class="word-display">
-      <span 
-        v-for="(char, idx) in wordChars" 
-        :key="idx"
-        :class="getCharClass(idx)"
-      >
-        {{ char }}
-      </span>
+  <div class="word-mode">
+    <div class="cards-grid" :class="gridClass">
+      <WordCard
+        v-for="(card, idx) in wordCards"
+        :key="card.id"
+        :word="card.word"
+        :note="card.note"
+        :is-active="idx === activeCardIndex && !card.isCompleted"
+        :is-completed="card.isCompleted"
+        @complete="(result) => onCardComplete(card.id, idx, result)"
+        @error="(info) => onCardError(info)"
+      />
     </div>
     
-    <div v-if="note && !isCompleted" class="word-note">
-      📝 {{ note }}
-    </div>
-    
-    <input 
-      v-if="isActive && !isCompleted"
-      ref="inputRef"
-      type="text"
-      v-model="inputValue"
-      @input="onInput"
-      @keydown="onKeyDown"
-      @keyup="onKeyUp"
-      @keydown.enter.prevent="onSubmit"
-      class="word-input"
-      :placeholder="`输入 ${word}...`"
-    >
-    
-    <div v-if="isCompleted" class="completed-mark">
-      ✅ 完成
+    <div class="stats-bar">
+      <div>进度: {{ completedCount }}/{{ totalWords }}</div>
+      <div>准确率: {{ (accuracy * 100).toFixed(1) }}%</div>
+      <div v-if="timerEnabled">剩余: {{ formatTime(timeRemaining) }}</div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch } from 'vue'
+import WordCard from './WordCard.vue'
 import { audioService } from '@/services/audioService'
 import { useConfigStore } from '@/stores/configStore'
 
 const props = defineProps({
-  word: { type: String, required: true },
-  note: { type: String, default: '' },
-  isActive: { type: Boolean, default: false },
-  isCompleted: { type: Boolean, default: false }
+  wordCards: { type: Array, required: true },
+  totalWords: { type: Number, required: true },
+  completedCount: { type: Number, required: true },
+  accuracy: { type: Number, default: 1 },
+  layout: { type: String, default: '4' },
+  timerEnabled: { type: Boolean, default: false },
+  timeRemaining: { type: Number, default: 0 }
 })
 
-const emit = defineEmits(['complete', 'error'])
+const emit = defineEmits(['word-complete', 'word-error', 'need-next-word'])
 
 const configStore = useConfigStore()
-const inputValue = ref('')
-const hasError = ref(false)
-const errorTriggered = ref(false)
-const inputRef = ref(null)
+const activeCardIndex = ref(0)
 
-const wordChars = computed(() => props.word?.split('') || [])
-const wordLength = computed(() => props.word?.length || 0)
-
-const getCharClass = (index) => {
-  if (props.isCompleted) return ''
-  if (index >= inputValue.value.length) return ''
-  
-  const inputChar = inputValue.value[index]
-  const targetChar = props.word[index]
-  
-  if (inputChar === targetChar) return 'correct'
-  return 'incorrect'
-}
-
-// 按键按下：开始播放按键音效
-const onKeyDown = () => {
-  if (configStore.soundEnabled) {
-    audioService.startKeypress()
+const gridClass = computed(() => {
+  const layouts = {
+    '1': 'grid-1x1', '2': 'grid-2x1', '3': 'grid-3x1',
+    '4': 'grid-2x2', '5': 'grid-2x2-plus-1', '6': 'grid-2x3',
+    '7': 'grid-3-plus-4', '8': 'grid-2x4', '9': 'grid-3x3'
   }
-}
-
-// 按键抬起：停止播放按键音效（延迟停止）
-const onKeyUp = () => {
-  if (configStore.soundEnabled) {
-    audioService.stopKeypress()
-  }
-}
-
-const triggerError = () => {
-  if (errorTriggered.value) return
-  errorTriggered.value = true
-  hasError.value = true
-  
-  // 播放错误音效
-  if (configStore.soundEnabled) {
-    audioService.playError()
-  }
-  
-  emit('error', { word: props.word, input: inputValue.value })
-}
-
-const onInput = () => {
-  if (props.isCompleted) return
-  
-  if (inputValue.value.length > wordLength.value) {
-    inputValue.value = inputValue.value.slice(0, wordLength.value)
-  }
-  
-  // 检查错误
-  let hasMismatch = false
-  for (let i = 0; i < inputValue.value.length; i++) {
-    if (inputValue.value[i] !== props.word[i]) {
-      hasMismatch = true
-      break
-    }
-  }
-  
-  if (hasMismatch && !hasError.value) {
-    triggerError()
-  } else if (!hasMismatch) {
-    hasError.value = false
-    errorTriggered.value = false
-  }
-  
-  // 自动提交
-  if (inputValue.value.length === wordLength.value) {
-    onSubmit()
-  }
-}
-
-const onSubmit = () => {
-  if (props.isCompleted) return
-  
-  // 停止按键音效
-  audioService.stopKeypressImmediately()
-  
-  const isCorrect = (inputValue.value === props.word)
-  
-  if (!isCorrect && !hasError.value) {
-    triggerError()
-  }
-  
-  emit('complete', {
-    word: props.word,
-    input: inputValue.value,
-    isCorrect
-  })
-}
-
-const focus = () => {
-  nextTick(() => {
-    if (inputRef.value && !props.isCompleted) {
-      inputRef.value.focus()
-      inputRef.value.select()
-    }
-  })
-}
-
-const reset = () => {
-  inputValue.value = ''
-  hasError.value = false
-  errorTriggered.value = false
-}
-
-watch(() => props.isActive, (active) => {
-  if (active && !props.isCompleted) focus()
+  return layouts[props.layout] || 'grid-2x2'
 })
 
-defineExpose({ focus, reset })
+const onCardComplete = (cardId, index, result) => {
+  // 如果正确完成，播放完成音效
+  if (result.isCorrect && configStore.soundEnabled) {
+    audioService.playComplete()
+  }
+  
+  // 先通知父组件记录完成
+  emit('word-complete', { cardId, ...result })
+  
+  // 检查是否需要补充新单词（在当前卡片位置）
+  emit('need-next-word', { index })
+  
+  // 重新计算活动索引：找下一个未完成的卡片
+  const nextIndex = findNextActiveIndex()
+  activeCardIndex.value = nextIndex
+}
+
+const onCardError = (info) => {
+  emit('word-error', info)
+}
+
+const findNextActiveIndex = () => {
+  // 从当前索引+1开始找
+  for (let i = activeCardIndex.value + 1; i < props.wordCards.length; i++) {
+    if (!props.wordCards[i].isCompleted) return i
+  }
+  // 从头开始找
+  for (let i = 0; i < activeCardIndex.value; i++) {
+    if (!props.wordCards[i].isCompleted) return i
+  }
+  // 全部完成了
+  return -1
+}
+
+const formatTime = (seconds) => {
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+// 监听 wordCards 变化，更新活动索引
+watch(() => props.wordCards, (newCards) => {
+  if (newCards.length === 0) return
+  
+  // 如果当前活动卡片已完成，找下一个
+  if (newCards[activeCardIndex.value]?.isCompleted) {
+    const nextIndex = findNextActiveIndex()
+    activeCardIndex.value = nextIndex >= 0 ? nextIndex : 0
+  }
+  
+  // 如果所有卡片都完成了，不需要活动索引
+  const allCompleted = newCards.every(c => c.isCompleted)
+  if (allCompleted) {
+    activeCardIndex.value = -1
+  }
+}, { deep: true, immediate: true })
 </script>
 
 <style scoped>
-/* 样式保持不变 */
-.word-card {
-  background: var(--card-bg);
-  border-radius: 12px;
-  padding: 16px;
-  text-align: center;
-  box-shadow: var(--shadow);
-  transition: all 0.3s;
-  min-width: 180px;
-}
-
-.word-card.active {
-  border: 2px solid var(--primary-color);
-  transform: scale(1.02);
-  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
-}
-
-.word-card.completed {
-  opacity: 0.6;
-  transform: scale(0.98);
-}
-
-.word-card.has-error {
-  border-color: var(--error-color);
-  animation: shake 0.4s ease-in-out;
-}
-
-.word-display {
-  font-size: 20px;
-  font-weight: bold;
-  font-family: monospace;
-  letter-spacing: 1px;
-  margin-bottom: 8px;
-}
-
-.word-note {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin-bottom: 12px;
-  background: var(--bg-secondary);
-  padding: 4px 8px;
-  border-radius: 16px;
-  display: inline-block;
-}
-
-.correct {
-  color: var(--correct-color);
-}
-
-.incorrect {
-  color: var(--error-color);
-  text-decoration: underline;
-  background: rgba(244, 67, 54, 0.15);
-}
-
-.word-input {
+.word-mode {
   width: 100%;
-  padding: 10px 12px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 40px;
+}
+
+.cards-grid {
+  flex: 1;
+  display: grid;
+  gap: 20px;
+  place-items: center;
+}
+
+.grid-1x1 { grid-template-columns: 1fr; place-items: center; }
+.grid-1x1 .word-card { width: 300px; }
+.grid-2x1 { grid-template-columns: repeat(2, 1fr); }
+.grid-2x1 .word-card { width: 250px; }
+.grid-3x1 { grid-template-columns: repeat(3, 1fr); }
+.grid-3x1 .word-card { width: 200px; }
+.grid-2x2 { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, auto); }
+.grid-2x2-plus-1 {
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: auto auto;
+}
+.grid-2x2-plus-1 .word-card:last-child {
+  grid-column: span 2;
+  justify-self: center;
+  width: 250px;
+}
+.grid-2x3 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, auto); }
+.grid-3-plus-4 {
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: auto auto;
+}
+.grid-3-plus-4 .word-card:nth-child(1),
+.grid-3-plus-4 .word-card:nth-child(2),
+.grid-3-plus-4 .word-card:nth-child(3) { grid-row: 1; }
+.grid-3-plus-4 .word-card:nth-child(4),
+.grid-3-plus-4 .word-card:nth-child(5),
+.grid-3-plus-4 .word-card:nth-child(6),
+.grid-3-plus-4 .word-card:nth-child(7) { grid-row: 2; }
+.grid-2x4 { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, auto); }
+.grid-3x3 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, auto); }
+
+.stats-bar {
+  display: flex;
+  justify-content: space-around;
+  padding: 16px;
   background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  border-radius: 8px;
+  border-radius: 12px;
+  margin-top: 20px;
   font-size: 14px;
-  text-align: center;
-  outline: none;
-}
-
-.word-input:focus {
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.2);
-}
-
-.completed-mark {
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--correct-color);
-}
-
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-5px); }
-  40% { transform: translateX(5px); }
-  60% { transform: translateX(-3px); }
-  80% { transform: translateX(3px); }
 }
 </style>
