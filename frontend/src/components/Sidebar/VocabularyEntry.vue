@@ -1,6 +1,6 @@
 <template>
   <div class="vocabulary-entry" @click="openVocabularyTable">
-    <div class="entry-icon">📓</div>
+    <div class="entry-icon">📚</div>
     <div class="entry-info">
       <div class="entry-title">单词表</div>
       <div class="entry-count">{{ vocabCount }} 个单词</div>

@@ -1,4 +1,7 @@
-//从文本中提取指定位置的单词（文章模式）
+/**
+ * 从文本中提取指定位置的单词
+ * 用于文章模式的错词记录
+ */
 export const extractWordAtPosition = (text, position) => {
   // 找到单词边界（字母范围）
   let start = position

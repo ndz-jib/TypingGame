@@ -1,10 +1,10 @@
 <template>
   <div class="typing-entry">
-    <h3 class="section-title">打字入口</h3>
+    <h3 class="section-title">🎮 打字入口</h3>
     
     <div class="mode-section">
       <div class="mode-header" @click="toggleWordMode">
-        <span class="mode-title">单词模式</span>
+        <span class="mode-title">📝 单词模式</span>
         <span class="toggle-icon">{{ wordModeExpanded ? '▼' : '▶' }}</span>
       </div>
       <div v-show="wordModeExpanded" class="mode-settings">
@@ -14,7 +14,7 @@
     
     <div class="mode-section">
       <div class="mode-header" @click="toggleArticleMode">
-        <span class="mode-title">文章模式</span>
+        <span class="mode-title">📖 文章模式</span>
         <span class="toggle-icon">{{ articleModeExpanded ? '▼' : '▶' }}</span>
       </div>
       <div v-show="articleModeExpanded" class="mode-settings">

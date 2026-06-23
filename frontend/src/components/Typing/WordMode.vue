@@ -15,7 +15,7 @@
     
     <div class="stats-bar">
       <div>进度: {{ completedCount }}/{{ totalWords }}</div>
-      <div>准确率: {{ (accuracy * 100).toFixed(1) }}%</div>
+      <div>提交准确率: {{ (accuracy * 100).toFixed(1) }}%</div>
       <div v-if="timerEnabled">剩余: {{ formatTime(timeRemaining) }}</div>
     </div>
   </div>

@@ -33,14 +33,14 @@
     
     <div class="mode-stats">
       <div class="mode-stat">
-        <div class="mode-name">单词模式</div>
+        <div class="mode-name">📝 单词模式</div>
         <div class="mode-data">
           <span>最佳: {{ wordBestWPM }} WPM</span>
           <span>准确: {{ (wordAvgAccuracy * 100).toFixed(1) }}%</span>
         </div>
       </div>
       <div class="mode-stat">
-        <div class="mode-name">文章模式</div>
+        <div class="mode-name">📖 文章模式</div>
         <div class="mode-data">
           <span>最佳: {{ articleBestWPM }} WPM</span>
           <span>准确: {{ (articleAvgAccuracy * 100).toFixed(1) }}%</span>

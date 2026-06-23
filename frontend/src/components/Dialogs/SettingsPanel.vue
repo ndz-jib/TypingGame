@@ -66,7 +66,7 @@
 
       <!-- 数据管理 -->
       <div class="settings-section">
-        <h3>💾 数据管理</h3>
+        <h3>数据管理</h3>
         <div class="setting-item">
           <button @click="exportData" class="action-btn export">导出存档</button>
           <button @click="importData" class="action-btn import">导入存档</button>
@@ -75,7 +75,7 @@
 
       <!-- 关于 -->
       <div class="settings-section">
-        <h3>ℹ️ 关于</h3>
+        <h3>关于</h3>
         <div class="about-info">
           <p>打字游戏 v1.0.0</p>
           <p>基于 Electron + Vue 3 + Flask</p>

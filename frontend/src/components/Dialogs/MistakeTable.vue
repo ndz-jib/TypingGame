@@ -43,7 +43,7 @@
         </div>
         
         <div v-else-if="mistakeList.length === 0" class="empty">
-          🎉 暂无错词，继续加油！
+          暂无错词，继续加油！
         </div>
         
         <div v-else class="mistake-rows">

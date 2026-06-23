@@ -1,9 +1,9 @@
 <template>
-  <div class="app" :data-theme="currentTheme">
+  <div class="app" :data-theme="themeStore.theme">
     <Sidebar ref="sidebarRef" />
     
     <main class="main-content">
-      <TypingArea v-if="isPlaying" />
+      <TypingArea v-if="gameStore.isPlaying" />
       <div v-else class="welcome">
         <h1>打字游戏</h1>
         <p>请从左侧菜单选择模式开始</p>
@@ -24,38 +24,80 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import Sidebar from '@/components/Sidebar/Sidebar.vue'
 import TypingArea from '@/components/Typing/TypingArea.vue'
 import VocabularyTable from '@/components/Dialogs/VocabularyTable.vue'
 import MistakeTable from '@/components/Dialogs/MistakeTable.vue'
 import SettingsPanel from '@/components/Dialogs/SettingsPanel.vue'
 import Toast from '@/components/Common/Toast.vue'
+import { useThemeStore } from '@/stores/themeStore'
+import { useGameStore } from '@/stores/gameStore'
+import { useConfigStore } from '@/stores/configStore'
+import { useUserStore } from '@/stores/userStore'
+import { useVocabularyStore } from '@/stores/vocabularyStore'
+import { useMistakeStore } from '@/stores/mistakeStore'
+import { eventBus } from '@/utils/eventBus'
+
+const themeStore = useThemeStore()
+const gameStore = useGameStore()
+const configStore = useConfigStore()
+const userStore = useUserStore()
+const vocabularyStore = useVocabularyStore()
+const mistakeStore = useMistakeStore()
 
 const sidebarRef = ref(null)
 const showVocabulary = ref(false)
 const showMistake = ref(false)
 const showSettings = ref(false)
 const toastRef = ref(null)
-const isPlaying = ref(false)
-const currentTheme = ref('light')
 
-// 模拟接收开始游戏事件
-const handleStartGame = () => {
-  isPlaying.value = true
-  if (sidebarRef.value) {
-    sidebarRef.value.closeSidebar()
+const handleOpenDialog = (dialogName) => {
+  switch (dialogName) {
+    case 'vocabulary':
+      showVocabulary.value = true
+      break
+    case 'mistake':
+      showMistake.value = true
+      break
+    case 'settings':
+      showSettings.value = true
+      break
   }
 }
 
-// 暴露给子组件使用（通过 provide 或 eventBus 简化，这里直接挂载到 window 用于演示）
-window.__APP__ = {
-  startGame: handleStartGame,
-  openVocabulary: () => { showVocabulary.value = true },
-  openMistake: () => { showMistake.value = true },
-  openSettings: () => { showSettings.value = true },
-  showToast: (msg, type) => { toastRef.value?.show(msg, 2000, type) }
+const handleStartGame = ({ mode, settings }) => {
+  // 开始游戏时自动收起折叠栏
+  if (sidebarRef.value) {
+    sidebarRef.value.closeSidebar()
+  }
+  gameStore.startGame(mode, settings)
 }
+
+const handleBeforeUnload = (e) => {
+  if (gameStore.isPlaying) {
+    gameStore.$reset()
+  }
+}
+
+onMounted(async () => {
+  themeStore.initTheme()
+  await configStore.fetchConfig()
+  await userStore.fetchUserInfo()
+  await vocabularyStore.fetchVocabulary()
+  await mistakeStore.fetchMistakeList()
+  
+  eventBus.on('open-dialog', handleOpenDialog)
+  eventBus.on('start-game', handleStartGame)
+  
+  window.addEventListener('beforeunload', handleBeforeUnload)
+})
+
+onBeforeUnmount(() => {
+  eventBus.off('open-dialog', handleOpenDialog)
+  eventBus.off('start-game', handleStartGame)
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+})
 </script>
 
 <style>
