@@ -2,17 +2,19 @@
 
 import sys
 import os
-from flask import Flask, request, jsonify, send_from_directory, abort
+import signal
+import threading
+import time
+from flask import Flask, request, jsonify
 from flask_cors import CORS
+from werkzeug.serving import make_server
 
 # 获取资源基础路径（兼容 PyInstaller 打包）
 def get_resource_path(relative_path):
     """获取资源文件的绝对路径，兼容开发环境和 PyInstaller 打包"""
     if getattr(sys, 'frozen', False):
-        # PyInstaller 打包后的路径
         base_path = sys._MEIPASS
     else:
-        # 开发环境路径
         base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
 
@@ -23,7 +25,62 @@ from impl.gameControllerImpl import GameControllerImpl
 from tool.loggerTool import logger
 from config import initialize_data, DATA_DIR
 
-# 初始化 Flask 应用
+# ==================== 全局变量 ====================
+server = None
+server_thread = None
+should_exit = False
+
+# ==================== 信号处理 ====================
+
+def shutdown_server():
+    """关闭服务器"""
+    global server, should_exit
+    should_exit = True
+    if server:
+        logger.info("正在关闭 Flask 服务器...")
+        server.shutdown()
+        logger.info("Flask 服务器已关闭")
+    else:
+        logger.info("服务器未运行，直接退出")
+
+def handle_exit(signum, frame):
+    """处理退出信号，确保资源释放"""
+    logger.info(f"收到退出信号: {signum}，正在清理...")
+    shutdown_server()
+    # 给服务器一点时间关闭
+    time.sleep(0.5)
+    logger.info("退出完成")
+    os._exit(0)  # 强制退出
+
+# 注册信号处理
+signal.signal(signal.SIGINT, handle_exit)
+signal.signal(signal.SIGTERM, handle_exit)
+
+# Windows 控制台关闭事件
+if sys.platform == 'win32':
+    try:
+        import win32api
+        import win32con
+        def console_handler(ctrl_type):
+            if ctrl_type == 0:  # CTRL_C_EVENT
+                logger.info("收到 Ctrl+C，正在退出...")
+                shutdown_server()
+                os._exit(0)
+                return True
+            elif ctrl_type == 2:  # CTRL_CLOSE_EVENT
+                logger.info("收到关闭事件，正在退出...")
+                shutdown_server()
+                os._exit(0)
+                return True
+            return False
+        win32api.SetConsoleCtrlHandler(console_handler, True)
+    except ImportError:
+        logger.warning("win32api 未安装，无法注册控制台事件处理")
+    except Exception as e:
+        logger.warning(f"注册控制台事件处理失败: {e}")
+
+# ==================== Flask 应用 ====================
+
 app = Flask(__name__)
 CORS(app)
 
@@ -226,10 +283,29 @@ def export_data():
 
 @app.route('/api/import/data', methods=['POST'])
 def import_data():
-    data = request.get_json()
-    if not data or 'filePath' not in data:
-        return jsonify({"code": 400, "message": "缺少filePath字段", "data": None}), 400
-    result = controller.import_data(data['filePath'])
+    """导入数据包（接收 ZIP 文件上传）"""
+    if 'file' not in request.files:
+        return jsonify({"code": 400, "message": "缺少文件", "data": None}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"code": 400, "message": "未选择文件", "data": None}), 400
+    
+    if not file.filename.lower().endswith('.zip'):
+        return jsonify({"code": 400, "message": "仅支持 ZIP 格式", "data": None}), 400
+    
+    import tempfile
+    temp_dir = tempfile.gettempdir()
+    temp_path = os.path.join(temp_dir, f'import_{file.filename}')
+    file.save(temp_path)
+    
+    result = controller.import_data(temp_path)
+    
+    try:
+        os.remove(temp_path)
+    except Exception:
+        pass
+    
     return jsonify(result), result.get('code', 200)
 
 # ==================== 文件上传 ====================
@@ -264,9 +340,7 @@ def upload_font():
 
 @app.route('/api/upload/voice/<string:voice_type>', methods=['POST'])
 def upload_voice(voice_type):
-    """上传音效
-    voice_type: keypress, error, complete
-    """
+    """上传音效"""
     if 'file' not in request.files:
         return jsonify({"code": 400, "message": "缺少文件", "data": None}), 400
     
@@ -302,9 +376,12 @@ def record_word_mode_result():
     wpm = data.get('wpm', 0)
     accuracy = data.get('accuracy', 0)
     play_time = data.get('playTime', 0)
+    correct_chars = data.get('correctChars', 0)  
+    wrong_chars = data.get('wrongChars', 0)      
     
-    result = controller.record_word_mode_result(wpm, accuracy, play_time)
+    result = controller.record_word_mode_result(wpm, accuracy, play_time, correct_chars, wrong_chars)
     return jsonify(result), result.get('code', 200)
+
 
 @app.route('/api/gamer/article-record', methods=['POST'])
 def record_article_mode_result():
@@ -316,8 +393,10 @@ def record_article_mode_result():
     wpm = data.get('wpm', 0)
     accuracy = data.get('accuracy', 0)
     play_time = data.get('playTime', 0)
+    correct_chars = data.get('correctChars', 0)  
+    wrong_chars = data.get('wrongChars', 0)      
     
-    result = controller.record_article_mode_result(wpm, accuracy, play_time)
+    result = controller.record_article_mode_result(wpm, accuracy, play_time, correct_chars, wrong_chars)
     return jsonify(result), result.get('code', 200)
 
 # ==================== 启动前初始化 ====================
@@ -330,10 +409,27 @@ def before_start():
 
 # ==================== 启动应用 ====================
 
+def run_server():
+    """在独立线程中运行服务器"""
+    global server
+    port = int(os.environ.get('TYPING_GAME_PORT', 5000))
+    
+    # 使用 Werkzeug 服务器，支持 shutdown()
+    server = make_server('127.0.0.1', port, app, threaded=True)
+    logger.info(f"Flask后端服务启动在 http://localhost:{port}")
+    logger.info(f"进程 PID: {os.getpid()}")
+    
+    try:
+        server.serve_forever()
+    except Exception as e:
+        logger.error(f"服务器异常: {e}")
+    finally:
+        logger.info("Flask 服务器线程已结束")
+
 if __name__ == '__main__':
     before_start()
     
-    port = int(os.environ.get('TYPING_GAME_PORT', 5000))
+    # 在主线程中运行服务器
+    run_server()
     
-    logger.info(f"Flask后端服务启动在 http://localhost:{port}")
-    app.run(host='127.0.0.1', port=port, debug=False, threaded=True)
+    logger.info("Flask 服务已完全停止")

@@ -38,7 +38,7 @@ class ApiService {
     return this.request(url, { method: 'DELETE' })
   }
   
-  // 文件上传
+  // 文件上传（独立实现，不依赖 request）
   async uploadFile(url, file, fieldName = 'file') {
     const formData = new FormData()
     formData.append(fieldName, file)
@@ -46,18 +46,25 @@ class ApiService {
     const response = await fetch(`${BASE_URL}${url}`, {
       method: 'POST',
       body: formData
+      // 不要设置 Content-Type，浏览器自动设置 multipart/form-data
     })
     
-    return response.json()
+    // 处理响应
+    const contentType = response.headers.get('content-type')
+    if (contentType && contentType.includes('application/json')) {
+      return response.json()
+    } else {
+      // 如果是 HTML 错误页面，抛出友好错误
+      const text = await response.text()
+      throw new Error(`服务器返回错误 (${response.status})`)
+    }
   }
   
-  // 获取静态资源 URL
+  // 带时间戳的静态资源 URL
   getStaticUrl(relativePath) {
-    // relativePath 示例: 'picture/avatar.png', 'font/default.ttf', 'voice/keypress.mp3'
     return `${STATIC_BASE}/${relativePath}`
   }
 
-  // 添加时间戳刷新资源
   getStaticUrlWithTimestamp(relativePath) {
     return `${STATIC_BASE}/${relativePath}?t=${Date.now()}`
   }

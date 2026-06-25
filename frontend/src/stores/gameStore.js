@@ -26,6 +26,7 @@ export const useGameStore = defineStore('game', {
       completed: 0,
       total: 0,
       correctChars: 0,
+      wrongChars: 0,
       accuracy: 1,
       efficiency: 0,
       timeRemaining: 0,
@@ -54,14 +55,43 @@ export const useGameStore = defineStore('game', {
       this.timerDuration = settings.timer?.duration || 120
       
       // 检查单词数量
-      const wordCount = settings.count || 10
-      if (wordCount <= 0) {
-        console.error('单词数量无效:', wordCount)
+      let wordCount = settings.count || 10
+      
+      // 获取单词表总数
+      const vocabRes = await api.get('/vocabulary', { 
+        params: { page: 1, pageSize: 1 } 
+      })
+      const totalAvailable = vocabRes.data?.total || 0
+      
+      if (totalAvailable === 0) {
+        console.error('单词表为空，无法开始游戏')
         this.isPlaying = false
         this.mode = null
+        alert('单词表为空，请先添加单词！')
         return
       }
       
+      // 限制单词数量不超过实际可用数量
+      if (wordCount > totalAvailable) {
+        console.warn(`请求 ${wordCount} 个单词，但单词表只有 ${totalAvailable} 个，将使用全部可用单词`)
+        wordCount = totalAvailable
+      }
+      
+      // 检查布局是否可用
+      const layout = settings.layout || '4'
+      const layoutCardCount = this.getCardCountByLayout(layout)
+      if (wordCount < layoutCardCount) {
+        console.warn(`单词数量 (${wordCount}) 少于布局所需卡片数 (${layoutCardCount})，将使用最小可用布局`)
+        const availableLayouts = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
+        for (const l of availableLayouts) {
+          if (this.getCardCountByLayout(l) <= wordCount) {
+            this.wordSettings.layout = l
+            break
+          }
+        }
+      }
+      
+      // 调用 API 获取随机单词
       const res = await api.get('/random/words', { params: { count: wordCount } })
       
       if (res.code === 200 && res.data.words && res.data.words.length > 0) {
@@ -69,14 +99,18 @@ export const useGameStore = defineStore('game', {
         this.stats.total = this.wordList.length
         this.stats.startTime = Date.now()
         this.stats.correctChars = 0
+        this.stats.wrongChars = 0
         this.stats.errorCount = 0
+        this.stats.completed = 0
+        this.stats.accuracy = 1
+        this.stats.efficiency = 0
         this.wordErrors = []
-        this.initWordCards(settings.layout)
+        this.initWordCards(this.wordSettings.layout || '4')
+        console.log('单词模式初始化成功，共', this.wordList.length, '个单词')
       } else {
-        console.error('获取随机单词失败或单词列表为空:', res)
+        console.error('获取随机单词失败:', res)
         this.isPlaying = false
         this.mode = null
-        // 提示用户
         alert('获取单词失败，请检查网络或稍后重试')
       }
     },
@@ -106,18 +140,27 @@ export const useGameStore = defineStore('game', {
       this.stats.completed++
       
       if (isCorrect) {
+        // 正确：累加正确字符数
         this.stats.correctChars += wordText.length
+        console.log(`单词 "${wordText}" 正确，+${wordText.length} 正确字符`)
       } else {
+        // 错误：记录错词并累加错误字符数
         if (!this.wordErrors.includes(wordText)) {
           this.wordErrors.push(wordText)
-          this.stats.errorCount++
+          this.stats.wrongChars += wordText.length
+          this.stats.errorCount += wordText.length
+          console.log(`单词 "${wordText}" 错误，+${wordText.length} 错误字符`)
           api.post('/mistake/record', { word: wordText }).catch(e => console.error(e))
         }
       }
       
-      this.stats.accuracy = this.stats.completed > 0 
-        ? (this.stats.completed - this.stats.errorCount) / this.stats.completed 
+      // 重新计算准确率（基于字符数）
+      const totalChars = this.stats.correctChars + this.stats.wrongChars
+      this.stats.accuracy = totalChars > 0 
+        ? this.stats.correctChars / totalChars 
         : 1
+      
+      console.log(`进度: ${this.stats.completed}/${this.stats.total}, 准确率: ${(this.stats.accuracy * 100).toFixed(1)}%`)
       
       if (this.stats.completed === this.stats.total) {
         this.endGame()
@@ -192,9 +235,13 @@ export const useGameStore = defineStore('game', {
           this.stats.total = processRes.data.totalChars
           this.stats.startTime = Date.now()
           this.stats.correctChars = 0
+          this.stats.wrongChars = 0
           this.stats.errorCount = 0
+          this.stats.completed = 0
+          this.stats.accuracy = 1
           this.currentLineIndex = 0
-          console.log('文章处理成功，总行数:', this.articleLines.length)
+          this.wordErrors = []
+          console.log('文章处理成功，总行数:', this.articleLines.length, '总字符数:', this.stats.total)
         } else {
           console.error('文章处理失败:', processRes)
           this.isPlaying = false
@@ -226,25 +273,69 @@ export const useGameStore = defineStore('game', {
       }
       
       const prevInput = this.articleLineInputs[lineIndex] || ''
+      const currentInput = input
       
-      for (let i = prevInput.length; i < input.length; i++) {
+      // 逐字符比对，只统计新增的字符变化
+      for (let i = 0; i < currentInput.length; i++) {
         if (i >= originalText.length) break
         
-        if (input[i] === originalText[i]) {
-          this.stats.correctChars++
-        } else if (input[i] !== undefined) {
+        const isNewChar = i >= prevInput.length
+        
+        if (currentInput[i] === originalText[i]) {
+          // 正确字符：只统计新增的正确字符
+          if (isNewChar) {
+            this.stats.correctChars++
+          }
+        } else if (currentInput[i] !== undefined && currentInput[i] !== '') {
+          // 错误字符：统计错误字符
+          if (isNewChar) {
+            this.stats.wrongChars++
+            this.stats.errorCount++
+          }
+          // 记录错词
           const errorWord = this.extractWordAtPosition(originalText, i)
           if (errorWord && !this.wordErrors.includes(errorWord)) {
             this.wordErrors.push(errorWord)
-            this.stats.errorCount++
             api.post('/mistake/record', { word: errorWord }).catch(e => console.error(e))
           }
         }
       }
       
+      // 如果用户删除了字符，重新计算统计
+      if (currentInput.length < prevInput.length) {
+        this.recalculateAllStats()
+      }
+      
       this.articleLineInputs[lineIndex] = input
       this.updateArticleProgress()
       this.updateEfficiency()
+    },
+    
+    // 重新计算所有统计（当用户删除字符时使用）
+    recalculateAllStats() {
+      let correct = 0
+      let wrong = 0
+      
+      for (let i = 0; i < this.articleLines.length; i++) {
+        const text = this.articleLines[i] || ''
+        const input = this.articleLineInputs[i] || ''
+        const minLen = Math.min(input.length, text.length)
+        
+        for (let j = 0; j < minLen; j++) {
+          if (input[j] === text[j]) {
+            correct++
+          } else if (input[j] !== undefined && input[j] !== '') {
+            wrong++
+          }
+        }
+      }
+      
+      this.stats.correctChars = correct
+      this.stats.wrongChars = wrong
+      this.stats.errorCount = wrong
+      
+      const totalChars = correct + wrong
+      this.stats.accuracy = totalChars > 0 ? correct / totalChars : 1
     },
     
     // 完全匹配：当前行变成完成栏，移动到下一行
@@ -273,12 +364,14 @@ export const useGameStore = defineStore('game', {
     
     updateArticleProgress() {
       let completedChars = 0
-      for (let i = 0; i <= this.currentLineIndex; i++) {
+      for (let i = 0; i <= this.currentLineIndex && i < this.articleLineInputs.length; i++) {
         completedChars += (this.articleLineInputs[i] || '').length
       }
-      this.stats.completed = completedChars
-      this.stats.accuracy = this.stats.completed > 0 
-        ? this.stats.correctChars / this.stats.completed 
+      this.stats.completed = Math.min(completedChars, this.stats.total || 0)
+      
+      const totalChars = this.stats.correctChars + this.stats.wrongChars
+      this.stats.accuracy = totalChars > 0 
+        ? this.stats.correctChars / totalChars 
         : 1
     },
     
@@ -307,7 +400,10 @@ export const useGameStore = defineStore('game', {
           this.currentLineIndex = 0
           this.stats.startTime = Date.now()
           this.stats.correctChars = 0
+          this.stats.wrongChars = 0
+          this.stats.errorCount = 0
           this.stats.completed = 0
+          this.stats.accuracy = 1
           this.wordErrors = []
           return true
         }
@@ -318,13 +414,15 @@ export const useGameStore = defineStore('game', {
     async handleWordError(word) {
       if (!this.wordErrors.includes(word)) {
         this.wordErrors.push(word)
-        this.stats.errorCount++
+        this.stats.wrongChars += word.length
+        this.stats.errorCount += word.length
         await api.post('/mistake/record', { word }).catch(e => console.error(e))
       }
     },
 
     handleCharError(char) {
       this.stats.errorCount++
+      this.stats.wrongChars++
     },
 
     updateEfficiency() {
@@ -354,6 +452,7 @@ export const useGameStore = defineStore('game', {
     calculateWPM() {
       const elapsedSeconds = (this.stats.endTime - this.stats.startTime) / 1000
       if (elapsedSeconds <= 0) return 0
+      // 标准单词长度 = 5 个字符
       return Math.round((this.stats.correctChars * 60) / (5 * elapsedSeconds))
     },
     
@@ -367,14 +466,56 @@ export const useGameStore = defineStore('game', {
       const wpm = this.calculateWPM()
       const elapsed = (this.stats.endTime - this.stats.startTime) / 1000
       
-      await this.saveGameRecord(wpm, elapsed)
+      // 获取正确和错误的字符数
+      const correctChars = this.stats.correctChars || 0
+      const wrongChars = this.stats.wrongChars || 0
+      
+      console.log('游戏结束统计:', {
+        mode: this.mode,
+        wpm: wpm,
+        correctChars: correctChars,
+        wrongChars: wrongChars,
+        elapsed: elapsed,
+        accuracy: this.stats.accuracy
+      })
+      
+      await this.saveGameRecord(wpm, elapsed, correctChars, wrongChars)
       this.isPlaying = false
     },
     
-    async saveGameRecord(wpm, playTime) {
-      const accuracy = this.stats.accuracy
+    async saveGameRecord(wpm, playTime, correctChars, wrongChars) {
+      const totalChars = (correctChars || 0) + (wrongChars || 0)
+      const accuracy = totalChars > 0 ? (correctChars || 0) / totalChars : 1
+      
       const endpoint = this.mode === 'word' ? '/gamer/word-record' : '/gamer/article-record'
-      await api.post(endpoint, { wpm, accuracy, playTime }).catch(e => console.error(e))
+      
+      const payload = {
+        wpm: Math.round(wpm * 10) / 10,
+        accuracy: Math.round(accuracy * 1000) / 1000,
+        playTime: Math.round(playTime * 100) / 100,
+        correctChars: correctChars || 0,
+        wrongChars: wrongChars || 0
+      }
+      
+      console.log('发送游戏记录:', endpoint, payload)
+      
+      try {
+        const res = await api.post(endpoint, payload)
+        if (res.code === 200) {
+          console.log('游戏记录保存成功:', res.data)
+          // 刷新用户信息以获取最新积分
+          const { useUserStore } = await import('./userStore')
+          const userStore = useUserStore()
+          await userStore.fetchUserInfo()
+          return res
+        } else {
+          console.error('游戏记录保存失败:', res.message)
+          return res
+        }
+      } catch (error) {
+        console.error('保存游戏记录异常:', error)
+        throw error
+      }
     },
     
     startGame(mode, settings) {
@@ -406,13 +547,22 @@ export const useGameStore = defineStore('game', {
       this.totalArticleParts = 1
       this.articlePartsList = []
       this.stats = {
-        completed: 0, total: 0, correctChars: 0, accuracy: 1, efficiency: 0,
-        timeRemaining: 0, startTime: null, endTime: null, errorCount: 0
+        completed: 0,
+        total: 0,
+        correctChars: 0,
+        wrongChars: 0,
+        accuracy: 1,
+        efficiency: 0,
+        timeRemaining: 0,
+        startTime: null,
+        endTime: null,
+        errorCount: 0
       }
       if (this.timer) {
         clearInterval(this.timer)
         this.timer = null
       }
+      console.log('游戏状态已重置')
     }
   }
 })

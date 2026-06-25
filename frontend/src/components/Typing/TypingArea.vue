@@ -164,25 +164,38 @@ const checkGameEnd = () => {
   }
 }
 
-// 聚焦当前模式的输入框
+// ==================== 聚焦方法（兼容两种模式） ====================
+
+/**
+ * 聚焦当前模式的输入框
+ * - 单词模式：聚焦到第一个未完成的单词卡片输入框
+ * - 文章模式：聚焦到当前行的输入框
+ */
 const focusCurrentMode = async () => {
   await nextTick()
   
-  if (gameStore.mode === 'word' && wordModeRef.value) {
-    const activeCard = wordModeRef.value.$el?.querySelector('.word-card.active input')
-    if (activeCard) {
-      activeCard.focus()
+  if (gameStore.mode === 'word') {
+    // ✅ 单词模式：使用 WordMode 组件暴露的方法
+    if (wordModeRef.value && typeof wordModeRef.value.focusFirstInput === 'function') {
+      wordModeRef.value.focusFirstInput()
+    } else {
+      // 备用方案：直接 DOM 查询
+      const input = document.querySelector('.word-card.active input') ||
+                    document.querySelector('.word-card:not(.completed) input')
+      if (input) {
+        input.focus()
+        input.select()
+      }
     }
   } else if (gameStore.mode === 'article') {
-    // 文章模式：延迟更长时间，等待内容加载完成
-    setTimeout(() => {
-      if (articleModeRef.value && articleModeRef.value.focusCurrentInput) {
-        articleModeRef.value.focusCurrentInput()
-      }
-    }, 300)
+    // ✅ 文章模式：使用 ArticleMode 组件暴露的方法
+    if (articleModeRef.value && typeof articleModeRef.value.focusCurrentInput === 'function') {
+      articleModeRef.value.focusCurrentInput()
+    }
   }
 }
 
+// ==================== 监听器 ====================
 
 // 监听游戏开始，自动聚焦
 watch(() => gameStore.isPlaying, (playing, wasPlaying) => {
@@ -199,6 +212,7 @@ watch(() => gameStore.isPlaying, (playing, wasPlaying) => {
       return
     }
     
+    // 延迟等待 DOM 渲染完成后聚焦
     setTimeout(() => {
       focusCurrentMode()
     }, 500)
@@ -211,15 +225,28 @@ watch(() => gameStore.isPlaying, (playing, wasPlaying) => {
 watch(() => gameStore.wordCards, () => {
   if (gameStore.mode === 'word' && gameStore.isPlaying) {
     setTimeout(() => {
-      if (wordModeRef.value) {
-        const activeCard = wordModeRef.value.$el?.querySelector('.word-card.active input')
-        if (activeCard) {
-          activeCard.focus()
-        }
-      }
+      focusCurrentMode()
     }, 50)
   }
 }, { deep: true })
+
+// 监听文章行变化，确保聚焦
+watch(() => gameStore.articleLines, (newLines) => {
+  if (gameStore.mode === 'article' && gameStore.isPlaying && newLines && newLines.length > 0) {
+    setTimeout(() => {
+      focusCurrentMode()
+    }, 300)
+  }
+}, { immediate: true })
+
+// 监听当前行索引变化，重新聚焦
+watch(() => gameStore.currentLineIndex, () => {
+  if (gameStore.mode === 'article' && gameStore.isPlaying) {
+    setTimeout(() => {
+      focusCurrentMode()
+    }, 100)
+  }
+})
 
 onUnmounted(() => {
   if (gameStore.timer) clearInterval(gameStore.timer)

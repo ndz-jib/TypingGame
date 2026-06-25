@@ -1,6 +1,11 @@
 <template>
   <div class="word-mode">
-    <div class="cards-grid" :class="gridClass">
+    <div v-if="wordCards.length === 0" class="empty-state">
+      <div class="empty-text">没有足够的单词</div>
+      <div class="empty-hint">请返回设置调整单词数量或布局</div>
+    </div>
+    
+    <div v-else class="cards-grid" :class="gridClass">
       <WordCard
         v-for="(card, idx) in wordCards"
         :key="card.id"
@@ -22,7 +27,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import WordCard from './WordCard.vue'
 import { audioService } from '@/services/audioService'
 import { useConfigStore } from '@/stores/configStore'
@@ -52,18 +57,13 @@ const gridClass = computed(() => {
 })
 
 const onCardComplete = (cardId, index, result) => {
-  // 如果正确完成，播放完成音效
   if (result.isCorrect && configStore.soundEnabled) {
     audioService.playComplete()
   }
   
-  // 先通知父组件记录完成
   emit('word-complete', { cardId, ...result })
-  
-  // 检查是否需要补充新单词（在当前卡片位置）
   emit('need-next-word', { index })
   
-  // 重新计算活动索引：找下一个未完成的卡片
   const nextIndex = findNextActiveIndex()
   activeCardIndex.value = nextIndex
 }
@@ -73,16 +73,26 @@ const onCardError = (info) => {
 }
 
 const findNextActiveIndex = () => {
-  // 从当前索引+1开始找
   for (let i = activeCardIndex.value + 1; i < props.wordCards.length; i++) {
     if (!props.wordCards[i].isCompleted) return i
   }
-  // 从头开始找
   for (let i = 0; i < activeCardIndex.value; i++) {
     if (!props.wordCards[i].isCompleted) return i
   }
-  // 全部完成了
   return -1
+}
+
+// 聚焦第一个输入框的方法
+const focusFirstInput = () => {
+  nextTick(() => {
+    // 方法1：通过 DOM 查询
+    const input = document.querySelector('.word-card.active input') ||
+                  document.querySelector('.word-card:not(.completed) input')
+    if (input) {
+      input.focus()
+      input.select()
+    }
+  })
 }
 
 const formatTime = (seconds) => {
@@ -95,18 +105,21 @@ const formatTime = (seconds) => {
 watch(() => props.wordCards, (newCards) => {
   if (newCards.length === 0) return
   
-  // 如果当前活动卡片已完成，找下一个
   if (newCards[activeCardIndex.value]?.isCompleted) {
     const nextIndex = findNextActiveIndex()
     activeCardIndex.value = nextIndex >= 0 ? nextIndex : 0
   }
   
-  // 如果所有卡片都完成了，不需要活动索引
   const allCompleted = newCards.every(c => c.isCompleted)
   if (allCompleted) {
     activeCardIndex.value = -1
   }
 }, { deep: true, immediate: true })
+
+// 暴露方法给父组件
+defineExpose({
+  focusFirstInput
+})
 </script>
 
 <style scoped>
@@ -164,5 +177,30 @@ watch(() => props.wordCards, (newCards) => {
   border-radius: 12px;
   margin-top: 20px;
   font-size: 14px;
+}
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.empty-icon {
+  font-size: 48px;
+  opacity: 0.6;
+}
+
+.empty-text {
+  font-size: 18px;
+  color: var(--text-secondary);
+}
+
+.empty-hint {
+  font-size: 14px;
+  color: var(--text-secondary);
+  opacity: 0.7;
 }
 </style>

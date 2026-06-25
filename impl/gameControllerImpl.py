@@ -637,8 +637,8 @@ class GameControllerImpl(GameController):
             return {"code": 500, "message": f"上传失败: {str(e)}", "data": None}
 
     # ==================== 游戏结果记录 ====================
-    def record_word_mode_result(self, wpm, accuracy, play_time):
-        """记录单词模式游玩结果"""
+    def record_word_mode_result(self, wpm, accuracy, play_time, correct_chars=0, wrong_chars=0):
+        """记录单词模式游玩结果（使用 ScoreCalculator 计算积分）"""
         try:
             current = self.file_tool.read_json(GAMER_DATA_PATH, DEFAULT_GAMER_DATA)
             
@@ -663,18 +663,37 @@ class GameControllerImpl(GameController):
             # 更新总游戏次数
             current['playStats']['totalGames'] += 1
             
+            from tool.scoreCalculator import ScoreCalculator
+            calculator = ScoreCalculator()
+            new_score = calculator.calculate_score(
+                correct_chars, 
+                wrong_chars, 
+                wpm, 
+                current.get('score', 0)
+            )
+            current['score'] = new_score
+            
             self.file_tool.write_json(GAMER_DATA_PATH, current)
             
-            logger.info(f"单词模式记录: WPM={wpm}, 准确率={accuracy}, 用时={play_time}s")
+            logger.info(f"单词模式记录: WPM={wpm}, 准确率={accuracy}, 用时={play_time}s, "
+                    f"正确字符={correct_chars}, 错误字符={wrong_chars}, 新积分={new_score}")
             
-            return {"code": 200, "message": "记录成功", "data": current['playStats']['modeStats']['wordMode']}
+            return {
+                "code": 200, 
+                "message": "记录成功", 
+                "data": {
+                    "modeStats": current['playStats']['modeStats']['wordMode'],
+                    "score": new_score
+                }
+            }
         
         except Exception as e:
             logger.error(f"记录单词模式结果失败: {str(e)}")
             return {"code": 500, "message": f"记录失败: {str(e)}", "data": None}
 
-    def record_article_mode_result(self, wpm, accuracy, play_time):
-        """记录文章模式游玩结果"""
+
+    def record_article_mode_result(self, wpm, accuracy, play_time, correct_chars=0, wrong_chars=0):
+        """记录文章模式游玩结果（使用 ScoreCalculator 计算积分）"""
         try:
             current = self.file_tool.read_json(GAMER_DATA_PATH, DEFAULT_GAMER_DATA)
             
@@ -699,11 +718,29 @@ class GameControllerImpl(GameController):
             # 更新总游戏次数
             current['playStats']['totalGames'] += 1
             
+            from tool.scoreCalculator import ScoreCalculator
+            calculator = ScoreCalculator()
+            new_score = calculator.calculate_score(
+                correct_chars, 
+                wrong_chars, 
+                wpm, 
+                current.get('score', 0)
+            )
+            current['score'] = new_score
+            
             self.file_tool.write_json(GAMER_DATA_PATH, current)
             
-            logger.info(f"文章模式记录: WPM={wpm}, 准确率={accuracy}, 用时={play_time}s")
+            logger.info(f"文章模式记录: WPM={wpm}, 准确率={accuracy}, 用时={play_time}s, "
+                    f"正确字符={correct_chars}, 错误字符={wrong_chars}, 新积分={new_score}")
             
-            return {"code": 200, "message": "记录成功", "data": current['playStats']['modeStats']['articleMode']}
+            return {
+                "code": 200, 
+                "message": "记录成功", 
+                "data": {
+                    "modeStats": current['playStats']['modeStats']['articleMode'],
+                    "score": new_score
+                }
+            }
         
         except Exception as e:
             logger.error(f"记录文章模式结果失败: {str(e)}")

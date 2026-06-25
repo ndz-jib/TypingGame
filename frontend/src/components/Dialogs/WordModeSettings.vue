@@ -13,6 +13,16 @@
           >
           <span class="value">{{ localSettings.count }}</span>
         </div>
+        <!-- 新增：显示单词表实际数量 -->
+        <div class="hint" v-if="totalVocabCount > 0">
+          单词表共有 <strong>{{ totalVocabCount }}</strong> 个单词
+          <span v-if="localSettings.count > totalVocabCount" class="warning">
+            ⚠️ 请求数量超过单词表总数，将使用全部 {{ totalVocabCount }} 个单词
+          </span>
+        </div>
+        <div class="hint" v-else>
+          <span class="warning">⚠️ 单词表为空，请先添加单词</span>
+        </div>
       </div>
       
       <div class="setting-group">
@@ -22,14 +32,24 @@
             v-for="(layout, key) in WORD_LAYOUTS" 
             :key="key"
             class="layout-btn"
-            :class="{ active: localSettings.layout === key }"
-            @click="localSettings.layout = key"
+            :class="{ 
+              active: localSettings.layout === key,
+              'layout-disabled': !isLayoutAvailable(key)
+            }"
+            @click="selectLayout(key)"
+            :disabled="!isLayoutAvailable(key)"
           >
             <div class="layout-preview" :data-layout="key">
               <span v-for="i in layout.cardCount" :key="i" class="preview-card"></span>
             </div>
             <span class="layout-name">{{ layout.name }}</span>
+            <span class="layout-required">需 {{ layout.cardCount }} 词</span>
           </button>
+        </div>
+        <div class="hint" v-if="selectedLayoutRequires > effectiveWordCount">
+          <span class="warning">
+            当前布局需要 {{ selectedLayoutRequires }} 张卡片，但只有 {{ effectiveWordCount }} 个单词可用
+          </span>
         </div>
       </div>
       
@@ -52,8 +72,12 @@
       
       <div class="dialog-actions">
         <button class="cancel-btn" @click="cancel">取消</button>
-        <button class="confirm-btn" @click="confirm" :disabled="!isWordCountValid">
-          开始游戏
+        <button 
+          class="confirm-btn" 
+          @click="confirm" 
+          :disabled="!isValid"
+        >
+          开始游戏 ({{ effectiveWordCount }} 词)
         </button>
       </div>
     </div>
@@ -61,10 +85,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import Modal from '@/components/Common/Modal.vue'
+import { useVocabularyStore } from '@/stores/vocabularyStore'
 
-// 常量定义
+// ==================== 常量定义 ====================
+
 const WORD_LAYOUTS = {
   '1': { name: '1x1', cardCount: 1 },
   '2': { name: '2x1', cardCount: 2 },
@@ -87,11 +113,16 @@ const TIMER_OPTIONS = {
 const MIN_WORD_COUNT = 1
 const MAX_WORD_COUNT = 100
 
-// 使用 defineModel 需要 Vue 3.3+
-// 如果不支持，改用 props + emit
-const visible = defineModel()
+// ==================== Store ====================
 
+const vocabularyStore = useVocabularyStore()
+
+// ==================== Props & Emits ====================
+
+const visible = defineModel()
 const emit = defineEmits(['start'])
+
+// ==================== 本地状态 ====================
 
 const localSettings = ref({
   count: 10,
@@ -102,10 +133,62 @@ const localSettings = ref({
   }
 })
 
-// 计算属性：单词数量是否有效
-const isWordCountValid = computed(() => {
-  return localSettings.value.count >= MIN_WORD_COUNT && localSettings.value.count <= MAX_WORD_COUNT
+// ==================== 计算属性 ====================
+
+// 单词表总数量
+const totalVocabCount = computed(() => vocabularyStore.totalCount)
+
+// 有效单词数量（取用户请求和实际数量的较小值）
+const effectiveWordCount = computed(() => {
+  if (totalVocabCount.value === 0) return 0
+  return Math.min(localSettings.value.count, totalVocabCount.value)
 })
+
+// 当前布局需要的卡片数量
+const selectedLayoutRequires = computed(() => {
+  const layout = WORD_LAYOUTS[localSettings.value.layout]
+  return layout ? layout.cardCount : 0
+})
+
+// 检查布局是否可用（单词数 >= 布局所需卡片数）
+const isLayoutAvailable = (layoutKey) => {
+  const layout = WORD_LAYOUTS[layoutKey]
+  if (!layout) return false
+  // 如果单词表为空，所有布局都不可用
+  if (totalVocabCount.value === 0) return false
+  // 需要至少能凑够一次展示的卡片数
+  return effectiveWordCount.value >= layout.cardCount
+}
+
+// 选择布局（带验证）
+const selectLayout = (key) => {
+  if (isLayoutAvailable(key)) {
+    localSettings.value.layout = key
+  }
+}
+
+// 整体有效性验证
+const isValid = computed(() => {
+  // 1. 单词表不能为空
+  if (totalVocabCount.value === 0) return false
+  
+  // 2. 有效单词数量必须 >= 1
+  if (effectiveWordCount.value < 1) return false
+  
+  // 3. 当前布局必须可用
+  if (!isLayoutAvailable(localSettings.value.layout)) return false
+  
+  return true
+})
+
+// 单词数量是否有效
+const isWordCountValid = computed(() => {
+  return localSettings.value.count >= MIN_WORD_COUNT && 
+         localSettings.value.count <= MAX_WORD_COUNT &&
+         totalVocabCount.value > 0
+})
+
+// ==================== 方法 ====================
 
 const formatTime = (seconds) => {
   const mins = Math.floor(seconds / 60)
@@ -114,17 +197,81 @@ const formatTime = (seconds) => {
 }
 
 const confirm = () => {
-  if (!isWordCountValid.value) {
-    alert(`单词数量必须在 ${MIN_WORD_COUNT} 到 ${MAX_WORD_COUNT} 之间`)
+  if (!isValid.value) {
+    if (totalVocabCount.value === 0) {
+      alert('单词表为空，请先添加单词！')
+      return
+    }
+    if (effectiveWordCount.value < selectedLayoutRequires.value) {
+      alert(`当前布局需要 ${selectedLayoutRequires.value} 张卡片，但只有 ${effectiveWordCount.value} 个单词可用。\n请减少单词数量或选择更小的布局。`)
+      return
+    }
+    alert('设置无效，请检查配置')
     return
   }
-  emit('start', { ...localSettings.value })
+  
+  // 传递有效单词数量（实际可用数量）
+  const settings = {
+    ...localSettings.value,
+    count: effectiveWordCount.value  // 使用实际可用数量
+  }
+  
+  emit('start', settings)
   visible.value = false
 }
 
 const cancel = () => {
   visible.value = false
 }
+
+// ==================== 监听 ====================
+
+// 当单词表数量变化时，自动调整设置
+watch(totalVocabCount, (newCount) => {
+  if (newCount === 0) {
+    // 单词表为空，禁用所有
+    return
+  }
+  
+  // 如果用户请求的数量超过实际数量，自动调整
+  if (localSettings.value.count > newCount) {
+    localSettings.value.count = newCount
+  }
+  
+  // 检查当前布局是否可用，如果不可用则自动切换到最小可用布局
+  if (!isLayoutAvailable(localSettings.value.layout)) {
+    // 找到第一个可用的布局
+    for (const [key, layout] of Object.entries(WORD_LAYOUTS)) {
+      if (layout.cardCount <= newCount) {
+        localSettings.value.layout = key
+        break
+      }
+    }
+  }
+}, { immediate: true })
+
+// 当用户调整单词数量时，检查布局是否仍然可用
+watch(() => localSettings.value.count, (newCount) => {
+  if (totalVocabCount.value === 0) return
+  
+  const effective = Math.min(newCount, totalVocabCount.value)
+  if (!isLayoutAvailable(localSettings.value.layout)) {
+    // 当前布局不可用，自动调整
+    for (const [key, layout] of Object.entries(WORD_LAYOUTS)) {
+      if (layout.cardCount <= effective) {
+        localSettings.value.layout = key
+        break
+      }
+    }
+  }
+})
+
+// 弹窗打开时刷新单词表数据
+watch(visible, (newVal) => {
+  if (newVal) {
+    vocabularyStore.fetchVocabulary()
+  }
+})
 </script>
 
 <style scoped>
@@ -163,6 +310,22 @@ const cancel = () => {
   font-weight: bold;
 }
 
+.hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 4px 0;
+}
+
+.hint strong {
+  color: var(--text-primary);
+}
+
+.hint .warning {
+  color: #ff9800;
+  display: block;
+  margin-top: 2px;
+}
+
 .layout-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -173,18 +336,33 @@ const cancel = () => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   padding: 8px;
   background: var(--bg-secondary);
   border: 2px solid var(--border-color);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
+  position: relative;
 }
 
 .layout-btn.active {
   border-color: var(--primary-color);
   background: rgba(33, 150, 243, 0.1);
+}
+
+.layout-btn.layout-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  filter: grayscale(0.8);
+}
+
+.layout-btn:hover:not(.layout-disabled) {
+  border-color: var(--primary-color);
+}
+
+.layout-btn:disabled {
+  cursor: not-allowed;
 }
 
 .layout-preview {
@@ -246,6 +424,17 @@ const cancel = () => {
 .layout-name {
   font-size: 11px;
   color: var(--text-secondary);
+}
+
+.layout-required {
+  font-size: 9px;
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+.layout-btn.active .layout-required {
+  color: var(--primary-color);
+  opacity: 1;
 }
 
 .timer-setting {

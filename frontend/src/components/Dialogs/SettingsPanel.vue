@@ -211,27 +211,39 @@ const exportData = async () => {
 }
 
 // 导入数据
+// SettingsPanel.vue - 导入数据
 const importData = () => {
-  const input = document.createElement('input')
-  input.type = 'file'
-  input.accept = '.zip'
-  input.onchange = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    
-    const res = await api.uploadFile('/import/data', file)
-    if (res.code === 200) {
-      alert('数据导入成功，应用将重启')
-      if (window.electronAPI) {
-        window.electronAPI.restartApp()
-      } else {
-        window.location.reload()
-      }
-    } else {
-      alert('导入失败：' + res.message)
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.zip'
+    input.onchange = async (e) => {
+        const file = e.target.files[0]
+        if (!file) return
+        
+        // 显示加载状态
+        const confirmMsg = '导入数据将覆盖当前所有数据（单词表、错词表、配置、文章、音效、字体），确定继续吗？'
+        if (!confirm(confirmMsg)) return
+        
+        try {
+            const res = await api.uploadFile('/import/data', file)
+            if (res.code === 200) {
+                alert('数据导入成功，应用将自动重启')
+                // 使用 Electron API 重启
+                if (window.electronAPI && window.electronAPI.restartApp) {
+                    window.electronAPI.restartApp()
+                } else {
+                    // 备用方案：强制刷新
+                    window.location.reload()
+                }
+            } else {
+                alert('导入失败：' + (res.message || '未知错误'))
+            }
+        } catch (error) {
+            console.error('导入异常:', error)
+            alert('导入失败：' + error.message)
+        }
     }
-  }
-  input.click()
+    input.click()
 }
 
 // 保存音效开关
